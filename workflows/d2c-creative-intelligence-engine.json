@@ -1,0 +1,482 @@
+{
+  "name": "D2C - Creative Strategy Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "D2C Creative Intelligence Engine",
+        "formDescription": "Enter a D2C product URL to generate a customer-informed creative testing strategy.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "product_url"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        -1872,
+        -528
+      ],
+      "id": "47815ff9-e625-48ba-ad9c-bda95eb15b2a",
+      "name": "Input product URL",
+      "webhookId": "bb7aa4e2-e267-4dc7-934d-c1bf1258c7d1"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.product_url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -1664,
+        -336
+      ],
+      "id": "89915749-4dcd-42af-9f69-b80504af0714",
+      "name": "FETCH PRODUCT PAGE1"
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "page_text",
+              "cssSelector": "body"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        -1424,
+        -528
+      ],
+      "id": "2392af69-d743-4d09-82ae-bbc22d193ff8",
+      "name": "EXTRACT PAGE TEXT"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are a D2C product data extraction specialist.\n\nYour job is to extract factual product information from the supplied webpage text.\n\nDo NOT create marketing copy.\nDo NOT create ad ideas.\nDo NOT create hooks.\nDo NOT invent missing information.\n\nOnly extract information that is explicitly present or clearly supported by the webpage.\n\nWEBPAGE TEXT:\n\n{{ $json.page_text }}\n\nExtract the following:\n\n1. Product name\n2. Price\n3. Currency\n4. Product description\n5. Features\n6. Benefits\n7. Materials\n8. USPs / differentiators\n9. Product claims\n10. Target customer signals\n11. Product category\n12. Available proof\n13. Unknown information\n\nImportant rules:\n\n- If information is not available, return an empty string or empty array.\n- Never invent a price.\n- Never invent materials.\n- Never invent certifications.\n- Never invent statistics.\n- Never invent reviews.\n- Never invent guarantees.\n- Never invent product benefits that are not supported by the page.\n- Preserve the meaning of the original claims.\n- Separate explicit product information from inferred information.\n- Ignore navigation menus, cart information, account information, unrelated links, footer content and website-wide promotional content whenever possible.\n\nReturn ONLY valid JSON using exactly this structure:\n\n{\n  \"product_name\": \"\",\n  \"price\": \"\",\n  \"currency\": \"\",\n  \"description\": \"\",\n  \"features\": [],\n  \"benefits\": [],\n  \"materials\": [],\n  \"usps\": [],\n  \"claims\": [],\n  \"target_customer_signals\": [],\n  \"product_category\": \"\",\n  \"available_proof\": [],\n  \"unknown_information\": []\n}"
+            }
+          ]
+        },
+        "simplify": false,
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        -1200,
+        -288
+      ],
+      "id": "d8ae1fe8-78e3-451b-9bcc-5fa6f6d6075d",
+      "name": "AI: Extract Product Info",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "5XlcIk5WuMA8rV7S",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// Recursively find the object containing our product data\nfunction findProductObject(value) {\n  if (!value) return null;\n\n  // If it's already an object, check it\n  if (typeof value === \"object\") {\n\n    // This is the object we're looking for\n    if (\n      value.name ||\n      value.product_name ||\n      value.description ||\n      value.features\n    ) {\n      return value;\n    }\n\n    // Search nested objects/arrays\n    for (const key of Object.keys(value)) {\n      const found = findProductObject(value[key]);\n\n      if (found) {\n        return found;\n      }\n    }\n  }\n\n  // Gemini may return JSON as a string\n  if (typeof value === \"string\") {\n\n    // Try entire string first\n    try {\n      const parsed = JSON.parse(value);\n      const found = findProductObject(parsed);\n\n      if (found) {\n        return found;\n      }\n    } catch {}\n\n    // Sometimes JSON is surrounded by extra text / markdown\n    const start = value.indexOf(\"{\");\n    const end = value.lastIndexOf(\"}\");\n\n    if (start !== -1 && end !== -1 && end > start) {\n      const possibleJson = value.slice(start, end + 1);\n\n      try {\n        const parsed = JSON.parse(possibleJson);\n        const found = findProductObject(parsed);\n\n        if (found) {\n          return found;\n        }\n      } catch {}\n    }\n  }\n\n  return null;\n}\n\nconst data = findProductObject(input) || {};\n\n// Convert value to text\nfunction toText(value) {\n  if (value === null || value === undefined) {\n    return \"\";\n  }\n\n  if (typeof value === \"string\") {\n    return value.trim();\n  }\n\n  return String(value).trim();\n}\n\n// Convert value to array\nfunction toArray(value) {\n\n  if (Array.isArray(value)) {\n    return value\n      .filter(v => v !== null && v !== undefined)\n      .map(v => String(v).trim())\n      .filter(Boolean);\n  }\n\n  if (value === null || value === undefined || value === \"\") {\n    return [];\n  }\n\n  return [String(value).trim()];\n}\n\n// Normalize fields\nconst product = {\n  product_name: toText(\n    data.product_name || data.name\n  ),\n\n  price: toText(data.price),\n\n  currency: toText(data.currency),\n\n  description: toText(data.description),\n\n  features: toArray(data.features),\n\n  benefits: toArray(data.benefits),\n\n  materials: toArray(data.materials),\n\n  usps: toArray(\n    data.usps ||\n    data.differentiators ||\n    data.unique_selling_points\n  ),\n\n  claims: toArray(data.claims),\n\n  target_customer_signals: toArray(\n    data.target_customer_signals\n  ),\n\n  product_category: toText(\n    data.product_category ||\n    data.category\n  ),\n\n  available_proof: toArray(\n    data.available_proof\n  ),\n\n  unknown_information: toArray(\n    data.unknown_information\n  )\n};\n\n// Create clean context for future AI nodes\nconst product_context = `\nPRODUCT NAME:\n${product.product_name}\n\nPRICE:\n${product.price} ${product.currency}\n\nCATEGORY:\n${product.product_category}\n\nDESCRIPTION:\n${product.description}\n\nFEATURES:\n${product.features.map(x => `- ${x}`).join(\"\\n\")}\n\nBENEFITS:\n${product.benefits.map(x => `- ${x}`).join(\"\\n\")}\n\nMATERIALS:\n${product.materials.map(x => `- ${x}`).join(\"\\n\")}\n\nUSPs / DIFFERENTIATORS:\n${product.usps.map(x => `- ${x}`).join(\"\\n\")}\n\nPRODUCT CLAIMS:\n${product.claims.map(x => `- ${x}`).join(\"\\n\")}\n\nTARGET CUSTOMER SIGNALS:\n${product.target_customer_signals.map(x => `- ${x}`).join(\"\\n\")}\n\nAVAILABLE PROOF:\n${product.available_proof.map(x => `- ${x}`).join(\"\\n\")}\n\nUNKNOWN INFORMATION:\n${product.unknown_information.map(x => `- ${x}`).join(\"\\n\")}\n`.trim();\n\nreturn [\n  {\n    json: {\n      ...product,\n      product_context\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        -576
+      ],
+      "id": "2880a8de-1460-463c-8ead-e86e679c0cc7",
+      "name": "Code: Clean & Structure"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b9d1bfab-68b2-431c-a539-ff086020e086",
+              "leftValue": "={{ $json.product_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "d10aeba6-f97a-447d-8a18-bb9706f1db9f",
+              "leftValue": "={{ $json.description }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -656,
+        -336
+      ],
+      "id": "5d1305c6-bf8a-4cc0-b926-35c735f14d1a",
+      "name": "Validate Product Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// Get Gemini text response\nlet text = \"\";\n\nif (input.candidates?.[0]?.content?.parts?.[0]?.text) {\n  text = input.candidates[0].content.parts[0].text;\n}\n\n// Clean markdown JSON if Gemini adds ```json\ntext = text\n  .replace(/^```json\\s*/i, \"\")\n  .replace(/^```\\s*/i, \"\")\n  .replace(/\\s*```$/i, \"\")\n  .trim();\n\n// Parse JSON\nlet result;\n\ntry {\n  result = JSON.parse(text);\n} catch (error) {\n  throw new Error(\n    \"Gemini returned invalid JSON. Raw response:\\n\" + text\n  );\n}\n\n// Return clean JSON\nreturn [\n  {\n    json: result\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        -368
+      ],
+      "id": "93ce42ce-3074-4219-85d9-1eca2e45b877",
+      "name": "PARSE CUSTOMER ANALYSIS"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3-flash-preview",
+          "mode": "list",
+          "cachedResultName": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=={{ \n`You are a senior D2C customer research strategist.\n\nAnalyze ONLY the exact product provided below.\n\nPRODUCT NAME:\n${$('Validate Product Data').item.json.product_name}\n\nPRICE:\n${$('Validate Product Data').item.json.price} ${$('Validate Product Data').item.json.currency}\n\nCATEGORY:\n${$('Validate Product Data').item.json.product_category}\n\nDESCRIPTION:\n${$('Validate Product Data').item.json.description}\n\nFEATURES:\n${JSON.stringify($('Validate Product Data').item.json.features)}\n\nBENEFITS:\n${JSON.stringify($('Validate Product Data').item.json.benefits)}\n\nMATERIALS:\n${JSON.stringify($('Validate Product Data').item.json.materials)}\n\nUSPs:\n${JSON.stringify($('Validate Product Data').item.json.usps)}\n\nCLAIMS:\n${JSON.stringify($('Validate Product Data').item.json.claims)}\n\nTASK:\n\nIdentify:\n\n1. Ideal customer\n2. Core customer problems\n3. Customer desires\n4. Purchase motivations\n5. Purchase objections\n6. Buying triggers\n7. Feature-to-benefit mechanisms\n8. Strategic insights\n\nGROUNDING RULES:\n\n- The product above is the ONLY source of truth.\n- Stay strictly relevant to this product.\n- Do not switch product categories.\n- Do not invent use cases.\n- Do not invent reviews.\n- Do not invent statistics.\n- Do not invent customer quotes.\n- Do not invent product claims.\n- Do not introduce health, medical, sleep, wellness, or other unrelated concepts unless explicitly present in the product data.\n- If information is unknown, return an empty array.\n- Do not write advertisements.\n- Do not write hooks.\n- Do not write captions.\n\nBefore returning the answer, verify that every insight is directly relevant to the exact product name and its supplied features.\n\nReturn ONLY valid JSON:\n\n{\n  \"product\": \"\",\n  \"ideal_customer\": \"\",\n  \"core_problems\": [],\n  \"customer_desires\": [],\n  \"buying_motivations\": [],\n  \"objections\": [],\n  \"buying_triggers\": [],\n  \"product_mechanisms\": [\n    {\n      \"feature\": \"\",\n      \"benefit\": \"\"\n    }\n  ],\n  \"strategic_insights\": [],\n  \"unknown\": []\n}`\n}}"
+            }
+          ]
+        },
+        "simplify": false,
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        -528,
+        -624
+      ],
+      "id": "147171bf-7ace-4426-9681-a0157b838024",
+      "name": "Product & Customer Analysis",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "5XlcIk5WuMA8rV7S",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3-flash-preview",
+          "mode": "id"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=={{\n`You are a senior D2C creative strategist.\n\nYour job is to turn CUSTOMER INTELLIGENCE into DISTINCT CREATIVE STRATEGIES.\n\nYou are NOT writing ads.\nYou are NOT writing captions.\nYou are NOT generating generic hooks.\n\nYou are deciding WHAT strategic idea each creative should communicate and WHY.\n\nPRODUCT:\n\n${$('Validate Product Data').item.json.product_name}\n\nPRICE:\n\n${$('Validate Product Data').item.json.price} ${$('Validate Product Data').item.json.currency}\n\nPRODUCT DESCRIPTION:\n\n${$('Validate Product Data').item.json.description}\n\nCUSTOMER INTELLIGENCE:\n\n${JSON.stringify($json)}\n\n-----------------------------------\n\nCREATE 5 DISTINCT CREATIVE ANGLES.\n\nEach angle must represent a meaningfully different customer insight.\n\nDo NOT create five variations of the same idea.\n\nPotential strategic territories include:\n\n- Problem / pain\n- Desired outcome\n- Product mechanism\n- Feature demonstration\n- Objection handling\n- Product differentiation\n- Social identity\n- Use case\n- Occasion\n- Value perception\n\nOnly use territories that genuinely fit this product.\n\nFOR EACH ANGLE PROVIDE:\n\n1. angle_name\n2. strategic_insight\n3. customer_problem\n4. customer_desire\n5. why_this_angle_should_work\n6. product_proof\n7. funnel_stage\n8. recommended_format\n9. creative_direction\n10. testing_hypothesis\n\nIMPORTANT:\n\n- Every angle must connect directly to the actual product.\n- Every angle must use a real product feature, benefit, claim, or customer insight.\n- Do not invent product capabilities.\n- Do not invent statistics.\n- Do not invent reviews.\n- Do not invent testimonials.\n- Do not create fake customer quotes.\n- Avoid generic statements such as \"premium quality\", \"best product\", \"must have\", unless specifically supported.\n- Avoid repeating the same insight across angles.\n- Do not write the final ad copy.\n- Do not write hooks.\n- Do not write captions.\n\nDIVERSITY RULE:\n\nThe 5 angles must differ in their underlying strategic idea.\n\nFor example:\n\nANGLE 1 → Customer problem\nANGLE 2 → Product mechanism\nANGLE 3 → Desired identity/outcome\nANGLE 4 → Objection/value\nANGLE 5 → Product differentiation\n\nDo NOT force these categories if they don't fit the product.\n\nQUALITY CONTROL:\n\nBefore returning the JSON, ask:\n\n\"Could these five angles be used interchangeably for almost any product?\"\n\nIf YES, rewrite them to be more product-specific.\n\nReturn ONLY valid JSON.\n\nUse exactly this structure:\n\n{\n  \"creative_angles\": [\n    {\n      \"angle_name\": \"\",\n      \"strategic_insight\": \"\",\n      \"customer_problem\": \"\",\n      \"customer_desire\": \"\",\n      \"why_this_angle_should_work\": \"\",\n      \"product_proof\": [],\n      \"funnel_stage\": \"\",\n      \"recommended_format\": \"\",\n      \"creative_direction\": \"\",\n      \"testing_hypothesis\": \"\"\n    }\n  ]\n}`\n}}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        -48,
+        -640
+      ],
+      "id": "dedd17c6-6a57-4c8a-983e-71290d2796b6",
+      "name": "CREATIVE STRATEGY ENGINE",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "5XlcIk5WuMA8rV7S",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// --------------------------------------------------\n// 1. Recursively collect all string values\n// --------------------------------------------------\n\nfunction collectStrings(value, results = []) {\n  if (typeof value === \"string\") {\n    results.push(value);\n    return results;\n  }\n\n  if (Array.isArray(value)) {\n    for (const item of value) {\n      collectStrings(item, results);\n    }\n    return results;\n  }\n\n  if (value && typeof value === \"object\") {\n    for (const key of Object.keys(value)) {\n      collectStrings(value[key], results);\n    }\n  }\n\n  return results;\n}\n\nconst strings = collectStrings(input);\n\n// --------------------------------------------------\n// 2. Find the string containing creative_angles\n// --------------------------------------------------\n\nlet text = strings.find(\n  value =>\n    value.includes('\"creative_angles\"') ||\n    value.includes(\"'creative_angles'\") ||\n    value.includes(\"creative_angles\")\n);\n\n// --------------------------------------------------\n// 3. Fallback: if Gemini directly returned an object\n// --------------------------------------------------\n\nlet result = null;\n\nif (!text) {\n  if (\n    input.creative_angles &&\n    Array.isArray(input.creative_angles)\n  ) {\n    result = input;\n  }\n}\n\n// --------------------------------------------------\n// 4. Parse the JSON string\n// --------------------------------------------------\n\nif (!result && text) {\n\n  // Remove markdown code fences\n  text = text\n    .replace(/^```json\\s*/i, \"\")\n    .replace(/^```\\s*/i, \"\")\n    .replace(/\\s*```$/i, \"\")\n    .trim();\n\n  try {\n    result = JSON.parse(text);\n  } catch (error) {\n\n    // Try extracting the JSON object\n    const start = text.indexOf(\"{\");\n    const end = text.lastIndexOf(\"}\");\n\n    if (start !== -1 && end !== -1) {\n      const jsonText = text.slice(start, end + 1);\n\n      try {\n        result = JSON.parse(jsonText);\n      } catch (secondError) {\n        throw new Error(\n          \"Creative strategy JSON could not be parsed.\\n\\nRaw Gemini text:\\n\" +\n          text\n        );\n      }\n    }\n  }\n}\n\n// --------------------------------------------------\n// 5. Final validation\n// --------------------------------------------------\n\nif (!result) {\n  throw new Error(\n    \"Could not find creative strategy JSON in Gemini response.\\n\\n\" +\n    \"Available response structure:\\n\" +\n    JSON.stringify(input, null, 2).slice(0, 5000)\n  );\n}\n\nif (!Array.isArray(result.creative_angles)) {\n  throw new Error(\n    \"Gemini response was found, but creative_angles is missing or is not an array.\\n\\n\" +\n    JSON.stringify(result, null, 2).slice(0, 5000)\n  );\n}\n\n// --------------------------------------------------\n// 6. Normalize every angle\n// --------------------------------------------------\n\nconst creative_angles = result.creative_angles.map(\n  (angle, index) => ({\n    angle_id: index + 1,\n\n    angle_name: String(\n      angle.angle_name || \"\"\n    ).trim(),\n\n    strategic_insight: String(\n      angle.strategic_insight || \"\"\n    ).trim(),\n\n    customer_problem: String(\n      angle.customer_problem || \"\"\n    ).trim(),\n\n    customer_desire: String(\n      angle.customer_desire || \"\"\n    ).trim(),\n\n    why_this_angle_should_work: String(\n      angle.why_this_angle_should_work || \"\"\n    ).trim(),\n\n    product_proof: Array.isArray(\n      angle.product_proof\n    )\n      ? angle.product_proof\n          .filter(Boolean)\n          .map(v => String(v).trim())\n      : angle.product_proof\n        ? [String(angle.product_proof).trim()]\n        : [],\n\n    funnel_stage: String(\n      angle.funnel_stage || \"\"\n    ).trim(),\n\n    recommended_format: String(\n      angle.recommended_format || \"\"\n    ).trim(),\n\n    creative_direction: String(\n      angle.creative_direction || \"\"\n    ).trim(),\n\n    testing_hypothesis: String(\n      angle.testing_hypothesis || \"\"\n    ).trim()\n  })\n);\n\n// --------------------------------------------------\n// 7. Return clean structure\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      creative_angles,\n      angle_count: creative_angles.length\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -608
+      ],
+      "id": "33679458-5067-4d74-b0a9-804fe78a1b5a",
+      "name": "PARSE CREATIVE STRATEGY"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=={{\n`You are a senior D2C creative strategist and creative QA reviewer.\n\nReview the creative strategy supplied below.\n\nIMPORTANT:\nThe INPUT JSON below is the ONLY strategy you should review.\n\nDo not reference any other n8n node.\nDo not create new creative ideas.\nDo not write hooks.\nDo not write captions.\nDo not rank the angles.\n\nCREATIVE STRATEGY INPUT:\n\n${JSON.stringify($json)}\n\nReview every creative angle for:\n\n1. PRODUCT RELEVANCE\nIs the angle clearly connected to the actual product?\n\n2. CUSTOMER INSIGHT\nDoes it address a meaningful customer problem, desire, motivation, or objection?\n\n3. DIFFERENTIATION\nIs this genuinely different from the other angles?\n\n4. EVIDENCE SUPPORT\nIs the direction supported by the product information already present in the strategy?\n\n5. CLICHE RISK\nCould this idea apply to almost any D2C product?\n\n6. TESTING VALUE\nWould testing this angle teach the marketer something useful?\n\n7. CLAIM SAFETY\nDoes it introduce an unsupported claim, guarantee, statistic, medical claim, or exaggerated outcome?\n\n8. CREATIVE CLARITY\nCould a designer, editor, or UGC creator understand what needs to be created?\n\nDECISION OPTIONS:\n\n\"keep\"\n\"revise\"\n\"reject\"\n\nKEEP:\nClearly relevant, differentiated, supported and testable.\n\nREVISE:\nPotentially useful but requires a specific correction.\n\nREJECT:\nIrrelevant, repetitive, generic, unsupported, misleading, or too vague.\n\nIMPORTANT:\n\nDo not invent product facts.\nDo not invent reviews.\nDo not invent statistics.\nDo not invent customer quotes.\nDo not introduce unrelated product categories.\nDo not create new creative angles.\n\nReturn ONLY valid JSON.\n\nUse exactly this structure:\n\n{\n  \"qa_summary\": {\n    \"total_angles_reviewed\": 0,\n    \"keep_count\": 0,\n    \"revise_count\": 0,\n    \"reject_count\": 0,\n    \"overall_notes\": []\n  },\n  \"reviewed_angles\": [\n    {\n      \"angle_id\": 0,\n      \"angle_name\": \"\",\n      \"decision\": \"keep\",\n      \"product_relevance\": \"\",\n      \"customer_insight_quality\": \"\",\n      \"differentiation\": \"\",\n      \"evidence_support\": \"\",\n      \"cliche_risk\": \"\",\n      \"creative_testing_value\": \"\",\n      \"compliance_check\": \"\",\n      \"reason\": \"\",\n      \"revision\": \"\",\n      \"validated_product_proof\": [],\n      \"final_creative_direction\": \"\",\n      \"testing_hypothesis\": \"\"\n    }\n  ]\n}`\n}}"
+            }
+          ]
+        },
+        "simplify": false,
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        496,
+        -608
+      ],
+      "id": "191003d8-4d81-48ed-a36c-023ff84f8e3d",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "5XlcIk5WuMA8rV7S",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// Recursively find a string containing our expected JSON\nfunction findJsonString(obj) {\n  if (typeof obj === 'string') {\n    if (\n      obj.includes('\"reviewed_angles\"') ||\n      obj.includes('\"qa_summary\"')\n    ) {\n      return obj;\n    }\n    return null;\n  }\n\n  if (Array.isArray(obj)) {\n    for (const item of obj) {\n      const found = findJsonString(item);\n      if (found) return found;\n    }\n    return null;\n  }\n\n  if (obj && typeof obj === 'object') {\n    for (const value of Object.values(obj)) {\n      const found = findJsonString(value);\n      if (found) return found;\n    }\n  }\n\n  return null;\n}\n\nlet rawText = findJsonString(input);\n\nif (!rawText) {\n  throw new Error('No Gemini QA JSON response found');\n}\n\n// Remove markdown code fences if Gemini added them\nrawText = rawText\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet parsed;\n\ntry {\n  parsed = JSON.parse(rawText);\n} catch (error) {\n  throw new Error(\n    'Gemini QA response could not be parsed as JSON: ' +\n    error.message\n  );\n}\n\n// Validate expected structure\nif (!parsed.reviewed_angles || !Array.isArray(parsed.reviewed_angles)) {\n  throw new Error(\n    'Invalid QA output: reviewed_angles array not found'\n  );\n}\n\n// Normalize each reviewed angle\nconst reviewedAngles = parsed.reviewed_angles.map((angle, index) => ({\n  angle_id: angle.angle_id ?? index + 1,\n  angle_name: angle.angle_name ?? '',\n  decision: angle.decision ?? 'revise',\n  product_relevance: angle.product_relevance ?? '',\n  customer_insight_quality: angle.customer_insight_quality ?? '',\n  differentiation: angle.differentiation ?? '',\n  evidence_support: angle.evidence_support ?? '',\n  cliche_risk: angle.cliche_risk ?? '',\n  creative_testing_value: angle.creative_testing_value ?? '',\n  compliance_check: angle.compliance_check ?? '',\n  reason: angle.reason ?? '',\n  revision: angle.revision ?? '',\n  validated_product_proof: Array.isArray(angle.validated_product_proof)\n    ? angle.validated_product_proof\n    : [],\n  final_creative_direction: angle.final_creative_direction ?? '',\n  testing_hypothesis: angle.testing_hypothesis ?? ''\n}));\n\nreturn [\n  {\n    json: {\n      qa_summary: parsed.qa_summary ?? {\n        total_angles_reviewed: reviewedAngles.length,\n        keep_count: reviewedAngles.filter(a => a.decision === 'keep').length,\n        revise_count: reviewedAngles.filter(a => a.decision === 'revise').length,\n        reject_count: reviewedAngles.filter(a => a.decision === 'reject').length,\n        overall_notes: []\n      },\n      reviewed_angles: reviewedAngles,\n      angle_count: reviewedAngles.length\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        -608
+      ],
+      "id": "c17abb65-c7cf-4d73-a6fb-16a0eef0388b",
+      "name": "PARSE QA JSON"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nconst angles = input.reviewed_angles || [];\n\nif (!Array.isArray(angles) || angles.length === 0) {\n  throw new Error('No reviewed creative angles found');\n}\n\nconst rows = [];\n\nfor (const angle of angles) {\n\n  // Reject angles ko final testing matrix se exclude karenge\n  if (angle.decision === 'reject') {\n    continue;\n  }\n\n  rows.push({\n    json: {\n      angle_id: angle.angle_id,\n      angle_name: angle.angle_name,\n\n      decision: angle.decision,\n\n      product_relevance: angle.product_relevance,\n\n      customer_insight: angle.customer_insight_quality,\n\n      strategic_differentiation: angle.differentiation,\n\n      evidence_support: angle.evidence_support,\n\n      cliche_risk: angle.cliche_risk,\n\n      creative_testing_value: angle.creative_testing_value,\n\n      compliance_check: angle.compliance_check,\n\n      qa_reason: angle.reason,\n\n      required_revision: angle.revision,\n\n      validated_product_proof:\n        Array.isArray(angle.validated_product_proof)\n          ? angle.validated_product_proof.join(' | ')\n          : '',\n\n      final_creative_direction:\n        angle.final_creative_direction,\n\n      testing_hypothesis:\n        angle.testing_hypothesis\n    }\n  });\n}\n\nif (rows.length === 0) {\n  throw new Error(\n    'All creative angles were rejected by QA. No matrix rows available.'\n  );\n}\n\nreturn rows;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        -608
+      ],
+      "id": "b2f2580d-39ba-4f17-9cba-55599442eb80",
+      "name": "BUILD MATRIX ROWS"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        -608
+      ],
+      "id": "011cf654-42c9-42b6-b780-e5cf57e91ced",
+      "name": "Convert to File"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Input product URL": {
+      "main": [
+        [
+          {
+            "node": "FETCH PRODUCT PAGE1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FETCH PRODUCT PAGE1": {
+      "main": [
+        [
+          {
+            "node": "EXTRACT PAGE TEXT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "EXTRACT PAGE TEXT": {
+      "main": [
+        [
+          {
+            "node": "AI: Extract Product Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Extract Product Info": {
+      "main": [
+        [
+          {
+            "node": "Code: Clean & Structure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Clean & Structure": {
+      "main": [
+        [
+          {
+            "node": "Validate Product Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Product Data": {
+      "main": [
+        [
+          {
+            "node": "Product & Customer Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Product & Customer Analysis": {
+      "main": [
+        [
+          {
+            "node": "PARSE CUSTOMER ANALYSIS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PARSE CUSTOMER ANALYSIS": {
+      "main": [
+        [
+          {
+            "node": "CREATIVE STRATEGY ENGINE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CREATIVE STRATEGY ENGINE": {
+      "main": [
+        [
+          {
+            "node": "PARSE CREATIVE STRATEGY",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PARSE CREATIVE STRATEGY": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "PARSE QA JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PARSE QA JSON": {
+      "main": [
+        [
+          {
+            "node": "BUILD MATRIX ROWS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BUILD MATRIX ROWS": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "dbf3c46f-b76e-4341-a173-1778c477b574",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e645604217a9351911d167e473d52c45e8170536cf103124f95ffe879cf73343"
+  },
+  "nodeGroups": [],
+  "id": "ocMG80KrhcOba3NL",
+  "tags": []
+}
