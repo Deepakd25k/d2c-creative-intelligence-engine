@@ -1,2 +1,13 @@
-# d2c-creative-intelligence-engine
-AI-powered n8n workflow that turns a D2C product URL into customer insights, creative strategy, AI QA, and a creative testing matrix.
+# D2C Creative Intelligence Engine
+
+Turn a D2C product URL into a structured creative testing strategy.
+
+Product URL
+→ Product Intelligence
+→ Customer Insights
+→ Creative Strategy
+→ AI Creative QA
+→ Testing Matrix
+→ XLSX
+
+Built with n8n + Google Gemini.
